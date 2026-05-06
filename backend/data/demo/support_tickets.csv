@@ -1,0 +1,36 @@
+content,date,segment
+The export function takes forever. I tried to export a 500-row report and it timed out after 3 minutes. This is blocking our end-of-month reporting.,2026-04-15,enterprise
+We need Slack notifications when a report is shared with us. Right now we have no idea when something is ready.,2026-04-20,smb
+The dashboard loads so slowly on Firefox. It takes 8-10 seconds every time we open it.,2026-04-18,individual
+I cannot find the CSV export button anywhere. Where did it go after the last update?,2026-04-22,smb
+Our team needs role-based permissions. Right now everyone can see everything including salary data.,2026-04-10,enterprise
+The mobile app crashes when I try to view charts on my iPhone 14. Very frustrating.,2026-04-25,individual
+We need an audit log to see who changed what. This is a compliance requirement for us.,2026-04-08,enterprise
+The search function returns wrong results. I searched for a client name and got completely unrelated results.,2026-04-19,smb
+Exporting to PDF generates a blank file. I've tried 5 times with different browsers.,2026-04-21,individual
+We desperately need SSO support. Managing separate passwords for 200 employees is not feasible.,2026-04-05,enterprise
+The API rate limits are too low. We hit 429 errors after 50 requests. We need at least 500 per minute.,2026-04-17,enterprise
+Dashboard takes 12 seconds to load. On my old laptop it's even worse. Please optimize this.,2026-04-23,smb
+When I export a report the column headers are missing. I have to manually add them every time.,2026-04-24,individual
+Can you add email notifications for when scheduled reports are ready? We check every morning.,2026-04-16,smb
+The search bar doesn't search within report descriptions. Only titles are searchable.,2026-04-20,smb
+We need granular permission controls. Marketing shouldn't see finance dashboards.,2026-04-12,enterprise
+The export CSV has encoding issues with special characters. German umlauts show as question marks.,2026-04-14,individual
+Loading time is killing our team's productivity. We open the app 20+ times a day.,2026-04-22,enterprise
+We need webhook support to trigger actions when a report is updated.,2026-04-09,enterprise
+Slack integration would save us so much time. We spend 30 minutes a day checking the app for updates.,2026-04-24,smb
+The PDF export cuts off the last two columns. This has been broken for two months.,2026-04-11,individual
+Can we get two-factor authentication? Our security team is requiring it for all SaaS tools.,2026-04-07,enterprise
+Report generation is painfully slow. A simple 100-row report takes 45 seconds to generate.,2026-04-18,smb
+Search is broken. When I type a customer name nothing comes up even though I can see them in the list.,2026-04-21,individual
+We need to export reports as Excel files not just CSV. Our clients only work with Excel.,2026-04-25,enterprise
+The app is unusable on mobile. Charts are too small to read and buttons are hard to click.,2026-04-20,smb
+I need to see who accessed which reports last week. We had a data incident and need to investigate.,2026-04-13,enterprise
+Every time I open a dashboard it reloads from scratch. Why doesn't it cache anything?,2026-04-23,individual
+We need custom user roles. Right now it's just admin or viewer with nothing in between.,2026-04-10,enterprise
+Notifications would be incredibly useful. We miss updates because we forget to check the dashboard.,2026-04-24,smb
+The export is taking way too long. Our finance team is waiting on reports for board presentations.,2026-04-16,enterprise
+Can we integrate with Microsoft Teams? We don't use Slack but we need something similar.,2026-04-22,smb
+The search needs to search across all fields. Right now it misses results we know exist.,2026-04-19,individual
+We got a GDPR request and need to export all data for a specific user. There is no way to do this.,2026-04-08,enterprise
+Dashboard performance has gotten worse with each update. It used to load in 2 seconds now it's 9.,2026-04-25,smb
