@@ -1,3 +1,8 @@
+<!-- portfolio-reuse-policy -->
+> **Portfolio review · reuse policy**  
+> Copyright (c) 2026 Pooja Hegde for her original work. Public visibility is for inspection; reuse, copying, modification, and redistribution require written permission except where existing licenses or law permit them. GitHub viewing and forking rights remain unaffected. See [copyright and reuse policy](COPYRIGHT.md).
+<!-- /portfolio-reuse-policy -->
+
 # Signal to Roadmap
 
 Turn scattered customer feedback into inspectable product decisions.
