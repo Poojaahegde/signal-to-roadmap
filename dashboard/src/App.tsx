@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowDownToLine, ArrowRight, Bell, Check, ChevronDown, CircleHelp, FileText,
@@ -48,13 +48,13 @@ function parseCsv(text: string, fallback: Source): Omit<Signal, 'id' | 'createdA
   row.push(cell); if (row.some(Boolean)) rows.push(row);
   if (!rows.length) return [];
   const headers = rows[0].map((value) => value.trim().toLowerCase());
-  const hasHeader = headers.some((value) => ['text', 'content', 'body', 'description', 'signal'].includes(value));
-  const textIndex = hasHeader ? Math.max(0, headers.findIndex((value) => ['text', 'content', 'body', 'description', 'signal'].includes(value))) : 0;
+  const hasHeader = headers.some((value) => ['text', 'feedback', 'message', 'comment', 'quote', 'content', 'body', 'description', 'signal'].includes(value));
+  const textIndex = hasHeader ? Math.max(0, headers.findIndex((value) => ['text', 'feedback', 'message', 'comment', 'quote', 'content', 'body', 'description', 'signal'].includes(value))) : 0;
   const sourceIndex = hasHeader ? headers.findIndex((value) => ['source', 'source_type', 'type'].includes(value)) : -1;
   const accountIndex = hasHeader ? headers.findIndex((value) => ['account', 'customer', 'company'].includes(value)) : -1;
   return rows.slice(hasHeader ? 1 : 0).map((cells) => {
     const raw = sourceIndex >= 0 ? (cells[sourceIndex] || '').toLowerCase() : '';
-    const source: Source = /support|ticket/.test(raw) ? 'support' : /review/.test(raw) ? 'review' : /note|sales/.test(raw) ? 'note' : fallback;
+    const source: Source = /support|ticket/.test(raw) ? 'support' : /review|survey/.test(raw) ? 'review' : /note|sales|interview|call/.test(raw) ? 'note' : fallback;
     return { text: (cells[textIndex] || '').trim(), source, account: accountIndex >= 0 ? cells[accountIndex]?.trim() : undefined };
   }).filter((item) => item.text.length >= 8);
 }
@@ -62,11 +62,14 @@ function parseCsv(text: string, fallback: Source): Omit<Signal, 'id' | 'createdA
 function sourceLabel(source: Source) { return source === 'support' ? 'Support' : source === 'note' ? 'Notes' : 'Reviews'; }
 function initials(text: string) { return text.split(' ').slice(0, 2).map((word) => word[0]).join('').toUpperCase(); }
 
-export default function App() {
-  const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
+export default function App({ initial, onChange, companyName, productName, cloud = false }: { initial?: Workspace; onChange?: (next: Workspace) => void; companyName?: string; productName?: string; cloud?: boolean }) {
+  const [workspace, setWorkspace] = useState<Workspace>(() => initial || initialWorkspace());
   const [view, setView] = useState<View>('overview');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [composer, setComposer] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<'blank'|'sample'|null>(null);
+  const [renaming, setRenaming] = useState<Theme|null>(null);
+  const [newName, setNewName] = useState('');
   const [rawInput, setRawInput] = useState('');
   const [inputSource, setInputSource] = useState<Source>('support');
   const [query, setQuery] = useState('');
@@ -74,6 +77,25 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!composer && !confirmAction && !renaming) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+    const selector = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]';
+    const controls = () => Array.from(dialog?.querySelectorAll<HTMLElement>(selector) || []);
+    controls()[0]?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') { setComposer(false); setConfirmAction(null); setRenaming(null); }
+      if (event.key === 'Tab') {
+        const items = controls(); const first = items[0]; const last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); previous?.focus(); };
+  }, [composer, confirmAction, renaming]);
+
 
   const themes = useMemo(() => analyze(workspace), [workspace]);
   const selected = themes.find((theme) => theme.id === selectedId) || null;
@@ -86,11 +108,13 @@ export default function App() {
 
   function update(next: Workspace) {
     setWorkspace(next);
+    onChange?.(next);
+    if (initial) return;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { setNotice('Browser storage is full; this session will not persist.'); }
   }
   function addSignals(items: Omit<Signal, 'id' | 'createdAt'>[]) {
-    const existing = new Set(workspace.signals.map((signal) => `${signal.source}:${signal.text.toLowerCase()}`));
-    const unique = items.filter((item) => !existing.has(`${item.source}:${item.text.toLowerCase()}`));
+    const existing = new Set(workspace.signals.map((signal) => `${signal.source}:${signal.account || ''}:${signal.text.trim().toLowerCase()}`));
+    const unique = items.filter((item) => { const key = `${item.source}:${item.account || ''}:${item.text.trim().toLowerCase()}`; if (existing.has(key)) return false; existing.add(key); return true; });
     if (!unique.length) { setNotice('No new signals found. Check for duplicates or shorter entries.'); return; }
     update({ ...workspace, signals: [...workspace.signals, ...unique.map((item) => ({ ...item, id: crypto.randomUUID(), createdAt: new Date().toISOString() }))] });
     setRawInput(''); setComposer(false); setView('issues');
@@ -99,24 +123,16 @@ export default function App() {
   async function onFile(file?: File) {
     if (!file) return;
     if (!/\.(csv|txt)$/i.test(file.name)) { setNotice('Upload a .csv or .txt file.'); return; }
+    if (file.size > 2_000_000) { setNotice('Please upload a file smaller than 2 MB.'); return; }
     const text = await file.text();
     addSignals(/\.csv$/i.test(file.name) ? parseCsv(text, inputSource) : parseInput(text, inputSource));
     if (fileInput.current) fileInput.current.value = '';
   }
-  function renameTheme(theme: Theme) {
-    const value = window.prompt('Name this issue', theme.name)?.trim();
-    if (value) update({ ...workspace, names: { ...workspace.names, [theme.id]: value.slice(0, 80) } });
-  }
+  function renameTheme(theme: Theme) { setRenaming(theme); setNewName(theme.name); }
   function setLane(theme: Theme, lane: Lane) { update({ ...workspace, lanes: { ...workspace.lanes, [theme.id]: lane } }); }
   function hideTheme(theme: Theme) { update({ ...workspace, hidden: [...workspace.hidden, theme.id] }); setSelectedId(null); }
-  function resetWorkspace() {
-    if (!window.confirm('Replace this local workspace with the sample data? Export your work first if you want to keep it.')) return;
-    update({ ...EMPTY, signals: SAMPLE_SIGNALS }); setSelectedId(null); setView('overview'); setNotice('Sample workspace restored.');
-  }
-  function newWorkspace() {
-    if (workspace.signals.length && !window.confirm('Start a blank local workspace? Export your work first if you want to keep it.')) return;
-    update(EMPTY); setSelectedId(null); setView('overview'); setNotice('Blank workspace ready.');
-  }
+  function resetWorkspace() { setConfirmAction('sample'); }
+  function newWorkspace() { setConfirmAction('blank'); }
 
   const nav: { id: View; label: string; icon: typeof LayoutDashboard; count?: number }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -129,7 +145,7 @@ export default function App() {
     <header className="topbar">
       <div className="brand"><span className="brand-mark">✦</span><span>Signal<span className="brand-light"> to Roadmap</span></span></div>
       <nav className="top-links" aria-label="Primary"><button onClick={() => setView('overview')}>Home</button><button onClick={() => setView('issues')}>Issues</button><button onClick={() => setView('roadmap')}>Roadmap</button></nav>
-      <div className="top-actions"><span className="local-pill"><span className="live-dot" /> Local workspace</span><button className="icon-button mobile-menu" aria-label="Open menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button><button className="top-cta" onClick={() => setComposer(true)}><Plus size={15}/> Add signals</button></div>
+      <div className="top-actions"><span className="local-pill"><span className="live-dot" /> {cloud ? 'Company workspace' : 'Local workspace'}</span><button className="icon-button mobile-menu" aria-label="Open menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button><button className="top-cta" onClick={() => setComposer(true)}><Plus size={15}/> Add signals</button></div>
     </header>
 
     <section className="hero" aria-label="Product introduction">
@@ -138,23 +154,23 @@ export default function App() {
       <motion.div className="hero-content" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55 }}>
         <span className="hero-badge"><Sparkles size={13}/> The customer voice, made actionable</span>
         <h1>Find the <em>pattern.</em> Build the right thing.</h1>
-        <p>Bring support tickets, sales notes, and reviews into one place. See recurring issues, inspect the evidence, and shape a roadmap your team can challenge.</p>
+        <p>Bring customer conversations, interviews, surveys, and reviews into one place. See recurring issues, inspect the evidence, and shape a roadmap your team can challenge.</p>
       </motion.div>
     </section>
 
     <motion.div className="dashboard-frame" initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .2, duration: .6 }}>
       <div className="dashboard">
         <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
-          <div className="sidebar-top"><span className="workspace-icon">S</span><span><strong>Product workspace</strong><small>{isSample ? 'Sample data' : 'Your local data'}</small></span><ChevronDown size={14}/></div>
+          <div className="sidebar-top"><span className="workspace-icon">S</span><span><strong>{productName || 'Product workspace'}</strong><small>{companyName || (isSample ? 'Sample data' : 'Your local data')}</small></span><ChevronDown size={14}/></div>
           <div className="sidebar-label">WORKSPACE</div>
           <nav aria-label="Workspace views">{nav.map((item) => <button key={item.id} className={`side-link ${view === item.id ? 'active' : ''}`} onClick={() => { setView(item.id); setMobileNav(false); }}><item.icon size={16}/><span>{item.label}</span>{item.count !== undefined && <b>{item.count}</b>}</button>)}</nav>
           <div className="sidebar-label sidebar-label-later">SOURCES</div>
-          <div className="source-list"><span><i className="source-dot support"/>Support tickets</span><span><i className="source-dot note"/>Sales & team notes</span><span><i className="source-dot review"/>Product reviews</span></div>
-          <div className="sidebar-bottom"><button onClick={newWorkspace}><Plus size={15}/> New workspace</button><button onClick={resetWorkspace}><Settings2 size={15}/> Reset sample</button><div className="privacy-note"><CircleHelp size={15}/> Your inputs stay in this browser.</div></div>
+          <div className="source-list"><span><i className="source-dot support"/>Customer conversations</span><span><i className="source-dot note"/>Interviews & notes</span><span><i className="source-dot review"/>Reviews & surveys</span></div>
+          <div className="sidebar-bottom"><button onClick={newWorkspace}><Plus size={15}/> Clear feedback</button><button onClick={resetWorkspace}><Settings2 size={15}/> Load example feedback</button><div className="privacy-note"><CircleHelp size={15}/> {cloud ? 'Changes stay private. Save to sync them.' : 'Saved on this device. No cloud sync.'}</div></div>
         </aside>
 
         <main className="workspace-main">
-          <div className="workspace-toolbar"><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>{nav.find((item) => item.id === view)?.label}</strong></div><div className="toolbar-actions"><span className="draft-tag">DRAFT ANALYSIS</span><button className="icon-button" title="Add signals" onClick={() => setComposer(true)}><Plus size={17}/></button><button className="icon-button" title="Export roadmap" onClick={() => download('signal-to-roadmap.md', exportRoadmap(themes, workspace.signals), 'text/markdown')}><ArrowDownToLine size={16}/></button><span className="avatar">PH</span></div></div>
+          <div className="workspace-toolbar"><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>{nav.find((item) => item.id === view)?.label}</strong></div><div className="toolbar-actions"><span className="draft-tag">DRAFT ANALYSIS</span><button className="icon-button" title="Add signals" onClick={() => setComposer(true)}><Plus size={17}/></button><button className="icon-button" title="Export roadmap" onClick={() => download('signal-to-roadmap.md', exportRoadmap(themes, workspace.signals), 'text/markdown')}><ArrowDownToLine size={16}/></button><span className="avatar">You</span></div></div>
           <div className="workspace-scroll">
             {notice && <div className="notice" role="status">{notice}<button aria-label="Dismiss" onClick={() => setNotice('')}><X size={14}/></button></div>}
             {view === 'overview' && <>
@@ -170,12 +186,13 @@ export default function App() {
       </div>
     </motion.div>
 
-    {composer && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setComposer(false); }}><div className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title"><div className="composer-header"><div><span className="eyebrow">BRING THE MESSY INPUT</span><h2 id="composer-title">Add customer signals</h2></div><button className="icon-button" aria-label="Close" onClick={() => setComposer(false)}><X size={18}/></button></div><p>Paste one ticket, note, or review per line. You can mix sources with prefixes like <code>support:</code>, <code>note:</code>, and <code>review:</code>.</p><label className="field-label" htmlFor="source">Default source</label><select id="source" className="source-select" value={inputSource} onChange={(event) => setInputSource(event.target.value as Source)}><option value="support">Support ticket</option><option value="note">Sales or team note</option><option value="review">Product review</option></select><label className="field-label" htmlFor="signal-text">Customer words</label><textarea id="signal-text" value={rawInput} onChange={(event) => setRawInput(event.target.value)} placeholder={'support: The integration keeps disconnecting after a sync.\nnote: A buyer asked for clearer setup instructions.\nreview: Reports are useful but CSV export is slow.'}/><div className="composer-bottom"><input ref={fileInput} type="file" accept=".csv,.txt,text/csv,text/plain" hidden onChange={(event) => onFile(event.target.files?.[0])}/><button className="outline-button" onClick={() => fileInput.current?.click()}><Upload size={15}/> Upload CSV or TXT</button><button className="solid-button" onClick={() => addSignals(parseInput(rawInput, inputSource))} disabled={!rawInput.trim()}><Sparkles size={15}/> Group signals</button></div><small className="helper">CSV columns: text/content, optional source and account. Analysis happens in your browser; no API key is needed.</small></div></div>}
+    {(confirmAction || renaming) && <div className="modal-backdrop"><form className="composer" role="dialog" aria-modal="true" aria-label={renaming?'Rename issue':'Replace feedback'} onSubmit={event=>{event.preventDefault();if(renaming){if(!newName.trim())return;update({...workspace,names:{...workspace.names,[renaming.id]:newName.trim().slice(0,80)}});setRenaming(null);}else{update({...EMPTY,signals:confirmAction==='sample'?SAMPLE_SIGNALS:[]});setSelectedId(null);setView('overview');setConfirmAction(null);setNotice('Feedback workspace updated.');}}}><h2>{renaming?'Rename issue':'Replace this product’s feedback?'}</h2>{renaming?<label className="field-label">Issue name<input className="source-select" autoFocus required maxLength={80} value={newName} onChange={e=>setNewName(e.target.value)}/></label>:<p>This replaces the feedback and roadmap choices in this workspace. Export a backup first if you want to keep them. Company and product details stay unchanged.</p>}<div className="composer-bottom"><button type="button" className="outline-button" onClick={()=>{setConfirmAction(null);setRenaming(null);}}>Cancel</button><button className="solid-button" type="submit">{renaming?'Save name':'Replace feedback'}</button></div></form></div>}
+    {composer && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setComposer(false); }}><div className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title"><div className="composer-header"><div><span className="eyebrow">BRING THE MESSY INPUT</span><h2 id="composer-title">Add customer signals</h2></div><button className="icon-button" aria-label="Close" onClick={() => setComposer(false)}><X size={18}/></button></div><p>Paste one ticket, note, or review per line. You can mix sources with prefixes like <code>support:</code>, <code>note:</code>, and <code>review:</code>.</p><label className="field-label" htmlFor="source">Default source</label><select id="source" className="source-select" value={inputSource} onChange={(event) => setInputSource(event.target.value as Source)}><option value="support">Customer conversation</option><option value="note">Interview or team note</option><option value="review">Review or survey</option></select><label className="field-label" htmlFor="signal-text">Customer words</label><textarea id="signal-text" value={rawInput} onChange={(event) => setRawInput(event.target.value)} placeholder={'support: The integration keeps disconnecting after a sync.\nnote: A buyer asked for clearer setup instructions.\nreview: Reports are useful but CSV export is slow.'}/><div className="composer-bottom"><input ref={fileInput} type="file" accept=".csv,.txt,text/csv,text/plain" hidden onChange={(event) => onFile(event.target.files?.[0])}/><button className="outline-button" onClick={() => fileInput.current?.click()}><Upload size={15}/> Upload CSV or TXT</button><button className="solid-button" onClick={() => addSignals(parseInput(rawInput, inputSource))} disabled={!rawInput.trim()}><Sparkles size={15}/> Group signals</button></div><small className="helper">CSV columns: text/content, optional source and account. Grouping happens in your browser. Save your workspace to sync company data.</small></div></div>}
   </div>;
 }
 
 function Stat({ label, value, icon, sub }: { label: string; value: number; icon: React.ReactNode; sub: string }) { return <div className="stat-card"><div className="stat-top"><span>{label}</span>{icon}</div><strong>{value}</strong><small>{sub}</small></div>; }
 function Empty({ text, onAction }: { text: string; onAction: () => void }) { return <div className="empty-state"><FileText size={24}/><p>{text}</p><button className="text-button" onClick={onAction}>Add signals <ArrowRight size={14}/></button></div>; }
 function IssueRow({ theme, onClick }: { theme: Theme; onClick: () => void }) { return <button className="issue-row" onClick={onClick}><span className="issue-row-icon"><Tag size={17}/></span><span><strong>{theme.name}</strong><small>{theme.sources.map(sourceLabel).join(' · ')}</small></span><b>{theme.signalIds.length} mentions</b><ArrowRight size={16}/></button>; }
-function SourceMix({ signals }: { signals: Signal[] }) { const items: { source: Source; label: string }[] = [{ source: 'support', label: 'Support tickets' }, { source: 'note', label: 'Sales & team notes' }, { source: 'review', label: 'Product reviews' }]; return <div className="source-mix">{items.map(({ source, label }) => { const count = signals.filter((signal) => signal.source === source).length; return <div className="source-mix-row" key={source}><div><span><i className={`source-dot ${source}`}/>{label}</span><b>{count}</b></div><div className="mix-track"><i className={source} style={{ width: `${signals.length ? count / signals.length * 100 : 0}%` }}/></div></div>; })}</div>; }
+function SourceMix({ signals }: { signals: Signal[] }) { const items: { source: Source; label: string }[] = [{ source: 'support', label: 'Customer conversations' }, { source: 'note', label: 'Interviews & notes' }, { source: 'review', label: 'Reviews & surveys' }]; return <div className="source-mix">{items.map(({ source, label }) => { const count = signals.filter((signal) => signal.source === source).length; return <div className="source-mix-row" key={source}><div><span><i className={`source-dot ${source}`}/>{label}</span><b>{count}</b></div><div className="mix-track"><i className={source} style={{ width: `${signals.length ? count / signals.length * 100 : 0}%` }}/></div></div>; })}</div>; }
 function ThemeDetail({ theme, signals, onRename, onLane, onHide }: { theme: Theme | null; signals: Signal[]; onRename: (theme: Theme) => void; onLane: (theme: Theme, lane: Lane) => void; onHide: (theme: Theme) => void }) { if (!theme) return <Empty text="Select an issue to see its evidence." onAction={() => {}}/>; const evidence = signals.filter((signal) => theme.signalIds.includes(signal.id)); return <><div className="detail-top"><span className="eyebrow">ISSUE DETAIL</span><button className="icon-button" aria-label="More options" title="Hide this theme" onClick={() => onHide(theme)}><MoreHorizontal size={17}/></button></div><h3>{theme.name}</h3><button className="rename-link" onClick={() => onRename(theme)}>Rename issue <ArrowRight size={13}/></button><div className="detail-metrics"><div><strong>{theme.signalIds.length}</strong><small>repeat signals</small></div><div><strong>{theme.sources.length}</strong><small>source types</small></div><div><strong>{theme.score}</strong><small>priority score</small></div></div><div className="detail-section"><span className="eyebrow">WHY THIS WAS GROUPED</span><p>{theme.rationale}</p><span className="confidence"><Check size={13}/>{theme.confidence} evidence confidence</span></div><div className="detail-section"><span className="eyebrow">CUSTOMER EVIDENCE</span><div className="quotes">{evidence.map((signal) => <blockquote key={signal.id}><span className={`source-chip ${signal.source}`}>{sourceLabel(signal.source)}</span><p>“{signal.text}”</p></blockquote>)}</div></div><div className="detail-section"><span className="eyebrow">ROADMAP LANE</span><div className="lane-buttons">{(['Now', 'Next', 'Later'] as Lane[]).map((lane) => <button key={lane} className={theme.lane === lane ? 'chosen' : ''} onClick={() => onLane(theme, lane)}>{lane}</button>)}</div></div><button className="hide-link" onClick={() => onHide(theme)}>Hide theme from analysis</button></>; }

@@ -27,7 +27,10 @@ export type Workspace = {
 };
 
 const RULES: { id: string; name: string; terms: string[] }[] = [
-  { id: 'sync', name: 'Integration sync failures', terms: ['sync', 'synchroniz', 'integration', 'quickbooks', 'salesforce', 'webhook', 'connected app', 'disconnect', 'duplicate record'] },
+  { id: 'delivery', name: 'Delivery and order updates', terms: ['delivery', 'shipment', 'tracking', 'package', 'order status'] },
+  { id: 'quality', name: 'Product quality and reliability', terms: ['defect', 'damaged', 'quality', 'replacement', 'faulty'] },
+  { id: 'booking', name: 'Booking and service availability', terms: ['appointment', 'booking', 'reschedule', 'availability', 'reservation'] },
+  { id: 'sync', name: 'Integration sync failures', terms: ['sync', 'synchroniz', 'integration', 'webhook', 'connected app', 'disconnect', 'duplicate record'] },
   { id: 'onboarding', name: 'Onboarding setup friction', terms: ['onboard', 'setup', 'set up', 'getting started', 'first run', 'invite', 'activation', 'tutorial', 'walkthrough'] },
   { id: 'performance', name: 'Slow pages and timeouts', terms: ['slow', 'latency', 'timeout', 'takes forever', 'loading', 'lag', 'freeze', 'crash', 'performance'] },
   { id: 'reporting', name: 'Reporting and export gaps', terms: ['report', 'dashboard', 'analytics', 'export', 'csv', 'pdf', 'metric', 'chart', 'download'] },
@@ -39,6 +42,9 @@ const RULES: { id: string; name: string; terms: string[] }[] = [
   { id: 'collaboration', name: 'Team handoff and collaboration', terms: ['collaborat', 'handoff', 'comment', 'share', 'teammate', 'approval', 'assign', 'team'] },
 ];
 const INITIATIVES: Record<string, string> = {
+  delivery: 'Make delivery status and delays clear',
+  quality: 'Resolve recurring quality problems',
+  booking: 'Make booking and rescheduling easier',
   sync: 'Make sync failures visible and recoverable',
   onboarding: 'Shorten the first-run setup path',
   performance: 'Reduce load time and timeout failures',
@@ -126,9 +132,13 @@ export function analyze(workspace: Workspace): Theme[] {
 }
 
 export const SAMPLE_SIGNALS: Signal[] = [
-  ['support', 'The QuickBooks sync failed again and invoices are now out of date.'],
+  ['support', 'My delivery is late and tracking has no useful update.'],
+  ['review', 'The package arrived damaged; getting a replacement was confusing.'],
+  ['note', 'Customers want to reschedule their appointment without calling.'],
+  ['review', 'Booking works well, but availability is hard to find.'],
+  ['support', 'The connected system sync failed again and invoices are now out of date.'],
   ['support', 'Our integration disconnects every morning and we cannot trust the synced records.'],
-  ['note', 'Buyer asked whether the Salesforce integration can recover automatically after an error.'],
+  ['note', 'Buyer asked whether the external system integration can recover automatically after an error.'],
   ['review', 'Useful app, but duplicate records appear after every sync.'],
   ['support', 'The onboarding setup takes too long; our new team could not invite coworkers.'],
   ['note', 'Prospect loved the demo but said first-run setup would need an admin walkthrough.'],
