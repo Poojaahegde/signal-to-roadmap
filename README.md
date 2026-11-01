@@ -9,7 +9,7 @@ Turn scattered customer feedback into inspectable product decisions.
 
 ![The working dashboard showing named issues and repeat counts](dashboard/preview.png)
 
-**[Open the portfolio demo](https://poojahegdeportfolio.netlify.app/apps/signal-to-roadmap/)** · [Read the dashboard setup guide](dashboard/README.md)
+**[Open the portfolio demo](https://poojaahegde.github.io/signal-to-roadmap/)** · [Read the dashboard setup guide](dashboard/README.md)
 
 ## What the dashboard does
 
