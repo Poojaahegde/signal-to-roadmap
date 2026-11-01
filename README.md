@@ -5,34 +5,43 @@
 
 # Signal to Roadmap
 
-Turn scattered customer feedback into inspectable product decisions.
+**[Open the website →](https://signal-to-roadmap.pages.dev/)**
 
-![The working dashboard showing named issues and repeat counts](dashboard/preview.png)
+Turn customer conversations, interviews, surveys and reviews into traceable themes and a Now / Next / Later roadmap. Works across software, retail, services and other industries; no Method CRM or QuickBooks dependency.
 
-**[Open the portfolio demo](https://poojaahegde.github.io/signal-to-roadmap/)** · [Read the dashboard setup guide](dashboard/README.md)
+## Two ways to use it
 
-## What the dashboard does
+- **Free guest mode:** no sign-in or product profile required. Add feedback, review themes, move roadmap lanes and export your work. Guest feedback stays on that browser/device.
+- **Company workspace:** email sign-in, a company profile, multiple product profiles, product-specific feedback and private cloud save. This version supports one owner account per company.
 
-- Accepts pasted support tickets, sales or team notes, and product reviews. Mixed entries can be prefixed `support:`, `note:`, or `review:`. CSV and TXT import are supported.
-- Groups recurring problems into named issues, shows how many input records mention each one, and keeps the original customer wording linked to the group.
-- Scores themes from repeat frequency, source diversity, and blocking language. The score is a planning aid, not a decision made for the team.
-- Suggests product initiatives in **Now / Next / Later** lanes. A reviewer can rename an issue, move its lane, hide a weak theme, inspect evidence, and export a Markdown roadmap draft.
-- Saves the workspace in the browser. The included sample data is synthetic, and a blank workspace is available.
+## What works
 
-## Run locally
+Paste feedback or import CSV/TXT; inspect source wording; rename or hide themes; choose roadmap lanes; export Markdown or a workspace JSON backup. Company profiles include audience, problems, goals, features, alternatives, website and stage. Use **Save changes** to sync signed-in work.
 
-Requires Node.js 22 or newer and pnpm 11 or newer.
+Grouping uses transparent keyword rules and a word-similarity fallback. It does not call an AI API. Counts represent input records, not unique customers; scores do not include revenue, effort or strategy. Product context is saved for reference and does not automatically change grouping.
+
+## Hosting and privacy
+
+The frontend is hosted on **Cloudflare Pages**. Supabase provides email authentication and private Postgres storage with owner-based row policies. Brevo delivers authentication emails; its Gmail-sender replacement is used until a custom sender domain is configured. Never put SMTP passwords or secret/service-role keys in frontend files.
+
+Example feedback is synthetic. Guest work is device-local; signed-in work is uploaded to Supabase only when saved. There are no team invitations, paid subscriptions or automatic feedback connectors in this release.
+
+## Run and configure
+
+The current app source is in [dashboard/](dashboard/). See [setup instructions](dashboard/SETUP.md).
 
 ```bash
 cd dashboard
-pnpm install
-pnpm dev
+npm install
+npm run dev
+npm run build
 ```
 
-Open the URL printed by Vite. To create a static bundle, run `pnpm build` from `dashboard/` and deploy its `dist/` directory.
+Publish the contents of `dashboard/dist/` to Cloudflare Pages. Public browser configuration is in `dashboard/.env.production`; use your own Supabase project when deploying your own copy. The earlier experimental Python/Next.js code under `backend/` and `frontend/` is separate.
 
-## Method and limits
+## Contact the developer
 
-The runnable dashboard analyzes data locally with a transparent issue taxonomy and a word-similarity fallback for unfamiliar topics. It does **not** call an AI API, and it does not send imported feedback to a server. New or ambiguous themes should be renamed or reviewed before a roadmap decision. A repeat count is a count of input records, not unique customers. The priority score does not know revenue, effort, or strategic fit.
+Questions, feedback or company pilots: **[poojagh1298@gmail.com](mailto:poojagh1298@gmail.com)**.
 
-The earlier experimental Python/Next.js code remains under `backend/` and `frontend/`; the working product demo is in `dashboard/`.
+The old GitHub Pages address is retained as a forwarding page to the Cloudflare website. Customer adoption and business outcomes have not yet been measured.
+
