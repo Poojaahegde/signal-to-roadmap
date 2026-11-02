@@ -18,12 +18,14 @@ export type Theme = {
   confidence: 'High' | 'Medium' | 'Low';
   lane: Lane;
   rationale: string;
+  manual?: boolean;
 };
 export type Workspace = {
   signals: Signal[];
   names: Record<string, string>;
   lanes: Record<string, Lane>;
   hidden: string[];
+  roadmapItems?: { id: string; title: string; description: string; lane: Lane }[];
 };
 
 const RULES: { id: string; name: string; terms: string[] }[] = [
@@ -72,9 +74,7 @@ function nameFromText(text: string): string {
 }
 
 export function parseInput(raw: string, defaultSource: Source): Omit<Signal, 'id' | 'createdAt'>[] {
-  return raw.split(/\n\s*\n|\n(?=(?:support|ticket|note|sales|review)\s*[:|\-])/i)
-    .flatMap((block) => block.split('\n').filter(Boolean).length > 1 && block.length < 700
-      ? block.split('\n') : [block])
+  return raw.split(/\r?\n/)
     .map((line) => line.trim()).filter(Boolean)
     .map((line) => {
       const prefix = line.match(/^(support|ticket|note|sales|review)\s*[:|\-]\s*/i);
@@ -112,7 +112,7 @@ export function analyze(workspace: Workspace): Theme[] {
     groups.get(id)!.add(signal.id);
   }
   const maxGroupSize = Math.max(1, ...Array.from(groups.values(), (ids) => ids.size));
-  return Array.from(groups.entries()).map(([id, ids]) => {
+  const derived = Array.from(groups.entries()).map(([id, ids]) => {
     const selected = workspace.signals.filter((signal) => ids.has(signal.id));
     const sources = Array.from(new Set(selected.map((signal) => signal.source)));
     const urgency = selected.filter((signal) => URGENT.some((word) => signal.text.toLowerCase().includes(word))).length;
@@ -129,6 +129,8 @@ export function analyze(workspace: Workspace): Theme[] {
       rationale: `${selected.length} ${selected.length === 1 ? 'signal' : 'signals'} across ${sources.length} ${sources.length === 1 ? 'source' : 'sources'}${urgency ? `; ${urgency} mention a blocking or failed experience` : ''}. Review the linked evidence before committing to a solution.`,
     };
   }).filter((theme) => !workspace.hidden.includes(theme.id)).sort((a, b) => b.score - a.score || b.signalIds.length - a.signalIds.length);
+  const manual: Theme[] = (workspace.roadmapItems || []).map(item => ({id:item.id,name:item.title,initiative:item.title,signalIds:[],sources:[],score:0,urgency:0,confidence:'Low',lane:item.lane,rationale:item.description || 'Added by you. Attach customer evidence before committing to delivery.',manual:true}));
+  return [...manual, ...derived];
 }
 
 export const SAMPLE_SIGNALS: Signal[] = [
