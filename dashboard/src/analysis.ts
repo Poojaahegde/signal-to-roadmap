@@ -25,6 +25,7 @@ export type Workspace = {
   names: Record<string, string>;
   lanes: Record<string, Lane>;
   hidden: string[];
+  plan?: { createdAt: string; items: { id: string; title: string; description: string; lane: Lane; signalIds: string[] }[] };
   roadmapItems?: { id: string; title: string; description: string; lane: Lane }[];
 };
 

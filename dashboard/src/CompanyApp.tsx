@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import App from './App';
+import App from './SimpleWorkspace';
 import { SAMPLE_SIGNALS, type Workspace } from './analysis';
 import { configured, emailReady, finishEmailSignIn, emptyProduct, loadCompany, saveCompany, sendCode, session, signOut, verifyCode, type Company, type Product } from './cloud';
 import './company.css';
