@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { analyze, exportRoadmap, parseInput, SAMPLE_SIGNALS, type Lane, type Signal, type Source, type Theme, type Workspace } from './analysis';
 
+import { parseTable, tableSignals, partitionSignals, decodeFeedback, MAX_FILE_BYTES, MAX_IMPORT_ROWS, type ImportTable, type IncomingSignal } from './importFeedback';
+
+type FilePreview = { name: string; raw: string; table?: ImportTable; signals?: IncomingSignal[] };
 type View = 'overview' | 'signals' | 'issues' | 'roadmap';
 const STORAGE_KEY = 'signal-to-roadmap-workspace-v1';
 const VIDEO_URL = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260319_015952_e1deeb12-8fb7-4071-a42a-60779fc64ab6.mp4';
@@ -28,36 +31,12 @@ function download(filename: string, contents: string, type: string) {
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
+  document.body.append(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function parseCsv(text: string, fallback: Source): Omit<Signal, 'id' | 'createdAt'>[] {
-  const rows: string[][] = [];
-  let row: string[] = [], cell = '', quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (char === '"' && quoted && text[i + 1] === '"') { cell += '"'; i++; }
-    else if (char === '"') quoted = !quoted;
-    else if (char === ',' && !quoted) { row.push(cell); cell = ''; }
-    else if ((char === '\n' || char === '\r') && !quoted) {
-      if (char === '\r' && text[i + 1] === '\n') i++;
-      row.push(cell); if (row.some(Boolean)) rows.push(row); row = []; cell = '';
-    } else cell += char;
-  }
-  row.push(cell); if (row.some(Boolean)) rows.push(row);
-  if (!rows.length) return [];
-  const headers = rows[0].map((value) => value.trim().toLowerCase());
-  const hasHeader = headers.some((value) => ['text', 'feedback', 'message', 'comment', 'quote', 'content', 'body', 'description', 'signal'].includes(value));
-  const textIndex = hasHeader ? Math.max(0, headers.findIndex((value) => ['text', 'feedback', 'message', 'comment', 'quote', 'content', 'body', 'description', 'signal'].includes(value))) : 0;
-  const sourceIndex = hasHeader ? headers.findIndex((value) => ['source', 'source_type', 'type'].includes(value)) : -1;
-  const accountIndex = hasHeader ? headers.findIndex((value) => ['account', 'customer', 'company'].includes(value)) : -1;
-  return rows.slice(hasHeader ? 1 : 0).map((cells) => {
-    const raw = sourceIndex >= 0 ? (cells[sourceIndex] || '').toLowerCase() : '';
-    const source: Source = /support|ticket/.test(raw) ? 'support' : /review|survey/.test(raw) ? 'review' : /note|sales|interview|call/.test(raw) ? 'note' : fallback;
-    return { text: (cells[textIndex] || '').trim(), source, account: accountIndex >= 0 ? cells[accountIndex]?.trim() : undefined };
-  }).filter((item) => item.text.length >= 8);
-}
 
 function sourceLabel(source: Source) { return source === 'support' ? 'Support' : source === 'note' ? 'Notes' : 'Reviews'; }
 function initials(text: string) { return text.split(' ').slice(0, 2).map((word) => word[0]).join('').toUpperCase(); }
@@ -70,6 +49,10 @@ export default function App({ initial, onChange, companyName, productName, cloud
   const [confirmAction, setConfirmAction] = useState<'blank'|'sample'|null>(null);
   const [renaming, setRenaming] = useState<Theme|null>(null);
   const [newName, setNewName] = useState('');
+  const [filePreview, setFilePreview] = useState<FilePreview | null>(null);
+  const [importError, setImportError] = useState('');
+  const [readingFile, setReadingFile] = useState(false);
+  const readRequest = useRef(0);
   const [rawInput, setRawInput] = useState('');
   const [inputSource, setInputSource] = useState<Source>('support');
   const [query, setQuery] = useState('');
@@ -77,6 +60,10 @@ export default function App({ initial, onChange, companyName, productName, cloud
   const [notice, setNotice] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (!composer) { readRequest.current++; setFilePreview(null); setImportError(''); setReadingFile(false); } }, [composer]);
+  const imported = filePreview?.table ? tableSignals(filePreview.table, inputSource) : { signals: filePreview?.signals ? parseInput(filePreview.raw, inputSource) : [], blank: 0 };
+  const pendingImport = partitionSignals(imported.signals, workspace.signals);
+
   useEffect(() => {
     if (!composer && !confirmAction && !renaming) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -112,21 +99,42 @@ export default function App({ initial, onChange, companyName, productName, cloud
     if (initial) return;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { setNotice('Browser storage is full; this session will not persist.'); }
   }
-  function addSignals(items: Omit<Signal, 'id' | 'createdAt'>[]) {
-    const existing = new Set(workspace.signals.map((signal) => `${signal.source}:${signal.account || ''}:${signal.text.trim().toLowerCase()}`));
-    const unique = items.filter((item) => { const key = `${item.source}:${item.account || ''}:${item.text.trim().toLowerCase()}`; if (existing.has(key)) return false; existing.add(key); return true; });
-    if (!unique.length) { setNotice('No new signals found. Check for duplicates or shorter entries.'); return; }
-    update({ ...workspace, signals: [...workspace.signals, ...unique.map((item) => ({ ...item, id: crypto.randomUUID(), createdAt: new Date().toISOString() }))] });
-    setRawInput(''); setComposer(false); setView('issues');
-    setNotice(`${unique.length} ${unique.length === 1 ? 'signal' : 'signals'} added and grouped.`);
+  function addSignals(items: IncomingSignal[], blankRows = 0) {
+    const { unique, duplicates } = partitionSignals(items, workspace.signals);
+    if (!unique.length) {
+      setImportError(items.length ? 'All of these records are already in this product workspace. No feedback was added.' : 'No feedback text was found. Choose the column containing the customer feedback, or paste some text.');
+      return;
+    }
+    update({ ...workspace, signals: [...workspace.signals, ...unique.map(item => ({ ...item, id: crypto.randomUUID(), createdAt: new Date().toISOString() }))] });
+    setRawInput(''); setComposer(false); setView('signals'); setQuery(''); setSourceFilter('all');
+    setNotice(`${unique.length} feedback ${unique.length === 1 ? 'record' : 'records'} added.${duplicates ? ` ${duplicates} duplicate${duplicates === 1 ? '' : 's'} skipped.` : ''}${blankRows ? ` ${blankRows} empty row${blankRows === 1 ? '' : 's'} skipped.` : ''} Open Issue themes to review the grouping.`);
   }
   async function onFile(file?: File) {
     if (!file) return;
-    if (!/\.(csv|txt)$/i.test(file.name)) { setNotice('Upload a .csv or .txt file.'); return; }
-    if (file.size > 2_000_000) { setNotice('Please upload a file smaller than 2 MB.'); return; }
-    const text = await file.text();
-    addSignals(/\.csv$/i.test(file.name) ? parseCsv(text, inputSource) : parseInput(text, inputSource));
-    if (fileInput.current) fileInput.current.value = '';
+    const request = ++readRequest.current;
+    setImportError(''); setFilePreview(null);
+    try {
+      if (!/\.(csv|txt)$/i.test(file.name)) throw new Error('This upload supports CSV and TXT files. For Excel, use Save As → CSV UTF-8 first.');
+      if (file.size > MAX_FILE_BYTES) throw new Error('This file is larger than 2 MB. Split it into smaller CSV or TXT files.');
+      setReadingFile(true);
+      const raw = decodeFeedback(await file.arrayBuffer());
+      if (request !== readRequest.current) return;
+      if (!raw.trim()) throw new Error('This file is empty. Add feedback text and upload it again.');
+      if (/\.csv$/i.test(file.name)) setFilePreview({name:file.name,raw,table:parseTable(raw)});
+      else {
+        const signals = parseInput(raw, inputSource);
+        if (!signals.length) throw new Error('No feedback text was found. Add one feedback record per line.');
+        if (signals.length > MAX_IMPORT_ROWS) throw new Error(`Import up to ${MAX_IMPORT_ROWS.toLocaleString()} records at a time. Split this TXT file into smaller files.`);
+        setFilePreview({name:file.name,raw,signals});
+      }
+    } catch (error) {
+      if (request === readRequest.current) setImportError(error instanceof Error ? error.message : 'The file could not be read. Try exporting it as CSV UTF-8.');
+    } finally {
+      if (request === readRequest.current) { setReadingFile(false); if (fileInput.current) fileInput.current.value = ''; }
+    }
+  }
+  function setImportColumn(field: 'textColumn' | 'sourceColumn' | 'accountColumn', value: number) {
+    setImportError(''); setFilePreview(current => current?.table ? {...current,table:{...current.table,[field]:value}} : current);
   }
   function renameTheme(theme: Theme) { setRenaming(theme); setNewName(theme.name); }
   function setLane(theme: Theme, lane: Lane) { update({ ...workspace, lanes: { ...workspace.lanes, [theme.id]: lane } }); }
@@ -187,7 +195,22 @@ export default function App({ initial, onChange, companyName, productName, cloud
     </motion.div>
 
     {(confirmAction || renaming) && <div className="modal-backdrop"><form className="composer" role="dialog" aria-modal="true" aria-label={renaming?'Rename issue':'Replace feedback'} onSubmit={event=>{event.preventDefault();if(renaming){if(!newName.trim())return;update({...workspace,names:{...workspace.names,[renaming.id]:newName.trim().slice(0,80)}});setRenaming(null);}else{update({...EMPTY,signals:confirmAction==='sample'?SAMPLE_SIGNALS:[]});setSelectedId(null);setView('overview');setConfirmAction(null);setNotice('Feedback workspace updated.');}}}><h2>{renaming?'Rename issue':'Replace this product’s feedback?'}</h2>{renaming?<label className="field-label">Issue name<input className="source-select" autoFocus required maxLength={80} value={newName} onChange={e=>setNewName(e.target.value)}/></label>:<p>This replaces the feedback and roadmap choices in this workspace. Export a backup first if you want to keep them. Company and product details stay unchanged.</p>}<div className="composer-bottom"><button type="button" className="outline-button" onClick={()=>{setConfirmAction(null);setRenaming(null);}}>Cancel</button><button className="solid-button" type="submit">{renaming?'Save name':'Replace feedback'}</button></div></form></div>}
-    {composer && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setComposer(false); }}><div className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title"><div className="composer-header"><div><span className="eyebrow">BRING THE MESSY INPUT</span><h2 id="composer-title">Add customer signals</h2></div><button className="icon-button" aria-label="Close" onClick={() => setComposer(false)}><X size={18}/></button></div><p>Paste one ticket, note, or review per line. You can mix sources with prefixes like <code>support:</code>, <code>note:</code>, and <code>review:</code>.</p><label className="field-label" htmlFor="source">Default source</label><select id="source" className="source-select" value={inputSource} onChange={(event) => setInputSource(event.target.value as Source)}><option value="support">Customer conversation</option><option value="note">Interview or team note</option><option value="review">Review or survey</option></select><label className="field-label" htmlFor="signal-text">Customer words</label><textarea id="signal-text" value={rawInput} onChange={(event) => setRawInput(event.target.value)} placeholder={'support: The integration keeps disconnecting after a sync.\nnote: A buyer asked for clearer setup instructions.\nreview: Reports are useful but CSV export is slow.'}/><div className="composer-bottom"><input ref={fileInput} type="file" accept=".csv,.txt,text/csv,text/plain" hidden onChange={(event) => onFile(event.target.files?.[0])}/><button className="outline-button" onClick={() => fileInput.current?.click()}><Upload size={15}/> Upload CSV or TXT</button><button className="solid-button" onClick={() => addSignals(parseInput(rawInput, inputSource))} disabled={!rawInput.trim()}><Sparkles size={15}/> Group signals</button></div><small className="helper">CSV columns: text/content, optional source and account. Grouping happens in your browser. Save your workspace to sync company data.</small></div></div>}
+    {composer && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setComposer(false); }}><div className="composer" role="dialog" aria-modal="true" aria-labelledby="composer-title"><div className="composer-header"><div><span className="eyebrow">ADD FEEDBACK</span><h2 id="composer-title">Bring the customer’s words.</h2></div><button className="icon-button" aria-label="Close" onClick={() => setComposer(false)}><X size={18}/></button></div>
+      <p>Upload a CSV or TXT file, review its contents, then import. Or paste feedback below.</p>
+      <label className="field-label" htmlFor="source">Default source</label><select id="source" className="source-select" value={inputSource} onChange={event => setInputSource(event.target.value as Source)}><option value="support">Customer conversation</option><option value="note">Interview or team note</option><option value="review">Review or survey</option></select>
+      <div className="feedback-file-box"><label className="field-label" htmlFor="feedback-file">Choose a CSV or TXT file</label><input id="feedback-file" className="feedback-file-input" ref={fileInput} type="file" accept=".csv,.txt,text/csv,text/plain" disabled={readingFile} onChange={event => onFile(event.target.files?.[0])}/><small>Up to 2 MB and {MAX_IMPORT_ROWS.toLocaleString()} rows per file. CSV supports commas, semicolons and tabs.</small><button type="button" className="text-button" onClick={() => download('feedback-template.csv', 'feedback,source,company\n"Delivery tracking needs clearer updates.",support,Sample customer\n"I need to reschedule my appointment online.",interview,Sample customer\n', 'text/csv')}>Download an example CSV <ArrowDownToLine size={14}/></button></div>
+      {readingFile && <p className="import-status" role="status">Reading your file…</p>}
+      {importError && <div className="import-error" role="alert">{importError}</div>}
+      {filePreview && <section className="import-preview" aria-label="Review file import"><div className="import-preview-heading"><strong>{filePreview.name}</strong><button className="text-button" onClick={() => {setFilePreview(null);setImportError('');}}>Remove file</button></div>
+        {filePreview.table && <><label className="import-header-toggle"><input type="checkbox" checked={filePreview.table.hasHeader} onChange={event => {try{setFilePreview({...filePreview,table:parseTable(filePreview.raw,event.target.checked)});setImportError('');}catch(error){setImportError(error instanceof Error ? error.message : 'Could not read the table.');}}}/>First row contains column headings</label><div className="import-columns">{(['textColumn','sourceColumn','accountColumn'] as const).map(field => <label key={field}>{field==='textColumn'?'Feedback text (required)':field==='sourceColumn'?'Source (optional)':'Customer / account (optional)'}<select aria-label={field==='textColumn'?'Feedback text column':field==='sourceColumn'?'Source column':'Customer column'} value={filePreview.table![field]} onChange={event => setImportColumn(field,Number(event.target.value))}><option value={-1}>{field==='textColumn'?'Choose the feedback column':field==='sourceColumn'?'Use default source':'Not included'}</option>{filePreview.table!.headers.map((header,i)=><option key={i} value={i}>{header}</option>)}</select></label>)}</div></>}
+        <p className="import-status" role="status">{filePreview.table?.textColumn===-1?'Choose the column that contains the feedback text.':`${imported.signals.length} readable records · ${pendingImport.unique.length} new · ${pendingImport.duplicates} duplicates · ${imported.blank} empty rows`}</p>
+        {!!imported.signals.length && <><p className="helper">Preview of the first {Math.min(3,imported.signals.length)} records:</p><ul className="import-samples">{imported.signals.slice(0,3).map((item,i)=><li key={i}><span>{sourceLabel(item.source)}{item.account ? ` · ${item.account}` : ''}</span><p>{item.text}</p></li>)}</ul></>}
+        {imported.signals.length>0 && pendingImport.unique.length===0 && <p className="import-error">All records are duplicates of feedback already in this workspace. Nothing new will be imported.</p>}
+        <button type="button" className="solid-button wide" disabled={!pendingImport.unique.length||readingFile} onClick={() => addSignals(imported.signals, imported.blank)}>Import {pendingImport.unique.length} new feedback {pendingImport.unique.length===1?'record':'records'}</button>
+      </section>}
+      <div className="paste-feedback"><label className="field-label" htmlFor="signal-text">Or paste feedback, one record per line</label><textarea id="signal-text" value={rawInput} onChange={event => {setRawInput(event.target.value);setImportError('');}} placeholder={'support: Delivery tracking needs clearer updates.\nnote: Customers want easier appointment booking.\nreview: The mobile page is slow.'}/><button className="solid-button" onClick={() => addSignals(parseInput(rawInput, inputSource))} disabled={!rawInput.trim()||readingFile}><Plus size={15}/> Add pasted feedback</button></div><small className="helper">{cloud?'Save your workspace after import to sync it to your account.':'Guest feedback stays in this browser. No sign-in or product profile is required.'}</small>
+    </div></div>}
+
   </div>;
 }
 

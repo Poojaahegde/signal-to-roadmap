@@ -80,7 +80,7 @@ export function parseInput(raw: string, defaultSource: Source): Omit<Signal, 'id
       const prefix = line.match(/^(support|ticket|note|sales|review)\s*[:|\-]\s*/i);
       const source: Source = prefix ? /support|ticket/i.test(prefix[1]) ? 'support' : /review/i.test(prefix[1]) ? 'review' : 'note' : defaultSource;
       return { source, text: prefix ? line.slice(prefix[0].length).trim() : line };
-    }).filter((item) => item.text.length >= 8);
+    }).filter((item) => item.text.length > 0);
 }
 
 export function analyze(workspace: Workspace): Theme[] {
