@@ -153,7 +153,7 @@ export default function App({ initial, onChange, companyName, productName, cloud
 
   return <div className="app-shell">
     <header className="topbar">
-      <div className="brand"><span className="brand-mark">✦</span><span>Signal<span className="brand-light"> to Roadmap</span></span></div>
+      <div className="brand"><span className="brand-mark">✦</span><span>Next<span className="brand-light">Signal</span></span></div>
       <nav className="top-links" aria-label="Primary"><button onClick={() => setView('overview')}>Home</button><button onClick={() => setView('issues')}>Issues</button><button onClick={() => setView('roadmap')}>Roadmap</button></nav>
       <div className="top-actions"><span className="local-pill"><span className="live-dot" /> {cloud ? 'Company workspace' : 'Local workspace'}</span><button className="icon-button mobile-menu" aria-label="Open menu" onClick={() => setMobileNav(!mobileNav)}><Menu size={19}/></button><button className="top-cta" onClick={() => setComposer(true)}><Plus size={15}/> Add feedback</button></div>
     </header>
@@ -164,7 +164,7 @@ export default function App({ initial, onChange, companyName, productName, cloud
       <div className="hero-wash" />
       <motion.div className="hero-content" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55 }}>
         <span className="hero-badge"><Sparkles size={13}/> The customer voice, made actionable</span>
-        <h1>Find the <em>pattern.</em> Build the right thing.</h1>
+        <h1>Customer feedback. <em>Clear priorities.</em></h1>
         <p>Bring customer conversations, interviews, surveys, and reviews into one place. See recurring issues, inspect the evidence, and shape a roadmap your team can challenge.</p>
       </motion.div>
     </section>

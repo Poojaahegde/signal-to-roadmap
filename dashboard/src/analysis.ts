@@ -161,7 +161,7 @@ export const SAMPLE_SIGNALS: Signal[] = [
 ].map(([source, text], index) => ({ id: `sample-${index}`, source: source as Source, text, createdAt: new Date(Date.now() - (index % 10) * 86400000).toISOString() }));
 
 export function exportRoadmap(themes: Theme[], signals: Signal[]): string {
-  return ['# Signal to Roadmap — draft for review', '', `Generated ${new Date().toLocaleDateString()}. Counts represent distinct input records, not customers.`, '',
+  return ['# NextSignal — draft for review', '', `Generated ${new Date().toLocaleDateString()}. Counts represent distinct input records, not customers.`, '',
     ...themes.flatMap((theme) => [
       `## ${theme.lane}: ${theme.initiative}`, `Customer issue: ${theme.name}`, `Priority score: ${theme.score}/100 · ${theme.signalIds.length} signals · ${theme.confidence} evidence confidence`,
       theme.rationale, '', 'Evidence:',
